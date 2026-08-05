@@ -63,7 +63,7 @@ def keep_alive():
 # ==========================================
 def self_ping():
     # あなたのRenderのURL
-    url = "https://mainbot-tuwm.onrender.com/health"
+    url = "https://main-rjmd.onrender.com/health"
     
     while True:
         try:

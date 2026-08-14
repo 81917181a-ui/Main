@@ -119,11 +119,8 @@ def generate_admin_embed():
     embed.description = dept_text
     return embed
 
-async def execute_channel_close(interaction: discord.Interaction):
+async def execute_channel_close(channel: discord.TextChannel, user: discord.abc.User, bot: commands.Bot):
     """チャンネル削除処理およびログ保存の共通関数"""
-    bot = interaction.client
-    channel = interaction.channel
-
     log_channel = bot.get_channel(LOG_CHANNEL_ID)
     if log_channel is None:
         try:
@@ -143,7 +140,7 @@ async def execute_channel_close(interaction: discord.Interaction):
 
     log_embed = discord.Embed(
         title="🔒 応募チャンネルクローズドログ",
-        description=f"**対象チャンネル:** `{channel.name}`\n**実行者:** {interaction.user.mention} (`{interaction.user.id}`)",
+        description=f"**対象チャンネル:** `{channel.name}`\n**実行者:** {user.mention} (`{user.id}`)",
         color=discord.Color.red()
     )
 
@@ -152,19 +149,6 @@ async def execute_channel_close(interaction: discord.Interaction):
 
     await asyncio.sleep(2)
     await channel.delete(reason="応募チャンネル閉鎖のため")
-
-class CloseConfirmView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-
-    @discord.ui.button(label="はい (クローズする)", style=discord.ButtonStyle.danger, custom_id="quiz_close_confirm_yes")
-    async def confirm_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("🔒 チャンネルをクローズして会話履歴をログチャンネルへ送信しています...", ephemeral=True)
-        await execute_channel_close(interaction)
-
-    @discord.ui.button(label="キャンセル", style=discord.ButtonStyle.secondary, custom_id="quiz_close_confirm_no")
-    async def confirm_no(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.edit_message(content="❌ クローズ処理をキャンセルしました。", embed=None, view=None)
 
 async def start_quiz_session(channel: discord.TextChannel, applicant: discord.Member, bot: commands.Bot, dept_name: str, questions: list):
     answers = []
@@ -192,7 +176,7 @@ async def start_quiz_session(channel: discord.TextChannel, applicant: discord.Me
         except asyncio.TimeoutError:
             timeout_embed = discord.Embed(
                 title="⏱️ タイムアウト",
-                description="30分間回答がなかったため、質問セッションを終了しました。\n再度やり直す場合は `!closereq` でチャンネルをクローズしてください。",
+                description="30分間回答がなかったため、質問セッションを終了しました。\n再度やり直す場合は `!close` でチャンネルをクローズしてください。",
                 color=discord.Color.red()
             )
             await channel.send(embed=timeout_embed)
@@ -533,7 +517,6 @@ async def auto_send_user_panel(bot: commands.Bot):
     except Exception as e:
         print(f"❌ [Quiz] 応募パネルの送信・更新に失敗しました: {e}")
 
-# 👇 *args, **kwargs を使って複数の引数を受け取れるように変更
 def setup_quiz_commands(bot: commands.Bot, *args, **kwargs):
     @bot.listen('on_ready')
     async def on_quiz_ready():
@@ -559,15 +542,10 @@ def setup_quiz_commands(bot: commands.Bot, *args, **kwargs):
         await save_config_to_discord(ctx.bot)
         await ctx.send("✅ テスト保存処理が完了しました。")
 
-    @bot.command(name="closereq")
-    async def close_req_cmd(ctx: commands.Context):
-        """!closereq コマンドでクローズ確認メッセージを表示"""
-        embed = discord.Embed(
-            title="🔒 チャンネルの削除確認",
-            description="本当にこのチャンネルをクローズ（削除）しますか？\n会話履歴のテキストファイルがログチャンネルに送られます。",
-            color=discord.Color.orange()
-        )
-        await ctx.send(embed=embed, view=CloseConfirmView())
+    @bot.command(name="close")
+    async def close_cmd(ctx: commands.Context):
+        """!close コマンドで確認なしですぐにチャンネルをクローズして削除する"""
+        await execute_channel_close(ctx.channel, ctx.author, ctx.bot)
 
     @bot.command(name="sendmessage")
     async def send_message_cmd(ctx: commands.Context, channel: discord.TextChannel, *, message: str):

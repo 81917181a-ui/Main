@@ -63,7 +63,7 @@ def keep_alive():
 # ==========================================
 def self_ping():
     # あなたのRenderのURL
-    url = "https://main-rjmd.onrender.com/health"
+    url = "https://koushiki.onrender.com/health"
     
     while True:
         try:

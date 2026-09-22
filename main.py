@@ -1122,8 +1122,33 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # 起動処理
 # ※ keep_alive() はファイル冒頭(82行目)で既に呼び出し済みのため、ここでは呼ばない
 #   (二重に呼ぶと同じポートに2回bindしようとして "Address already in use" になる)
+def run_bot_forever():
+    """
+    discord.py の login/reconnect 時に Discord API (Cloudflare経由) が
+    一時的にエラーページ(HTML)を返すと discord.HTTPException が発生し、
+    bot.run() ごとプロセスが落ちてしまう。
+    ここで例外を捕まえて少し待ってから再試行することで、
+    一時的な通信エラー程度ではプロセスを終了させないようにする。
+    """
+    retry_wait = 10  # 秒。失敗が続くと徐々に伸ばす
+    max_retry_wait = 300
+
+    while True:
+        try:
+            bot.run(DISCORD_TOKEN)
+            # bot.run() が正常に(例外なく)戻ってきた場合はループを抜ける
+            # (!restart コマンドでの sys.exit(0) はプロセスごと終了するのでここには来ない)
+            break
+        except Exception as e:
+            import traceback
+            print(f"⚠️ [起動処理] bot.run() が例外で終了しました: {e}")
+            traceback.print_exc()
+            print(f"🔁 {retry_wait}秒後に再接続を試みます...")
+            time.sleep(retry_wait)
+            retry_wait = min(retry_wait * 2, max_retry_wait)
+
 if __name__ == "__main__":
     if DISCORD_TOKEN:
-        bot.run(DISCORD_TOKEN)
+        run_bot_forever()
     else:
         print("エラー: 環境変数 'DISCORD_TOKEN' が設定されていないか、見つかりません。")

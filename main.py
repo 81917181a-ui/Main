@@ -74,6 +74,7 @@ class MainBot(commands.Bot):
         # 起動時に1回だけ登録（on_readyは再接続で複数回呼ばれるためここで行う）
         sub.setup_points_commands(self)
         await self.add_cog(sub.Modmail(self))
+        await self.add_cog(sub.Messenger(self))
         self.add_view(sub.SupportClaimView())  # 再起動後も「担当する」ボタンを有効に
         try:
             synced = await self.tree.sync()

@@ -7,7 +7,7 @@ import json
 import os
 import random
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import discord
 from discord import app_commands
@@ -547,6 +547,86 @@ class Modmail(commands.Cog):
             color=discord.Color.yellow(),
         )
         await interaction.followup.send(embed=reset_embed, view=SupportClaimView())
+
+
+# ==========================================
+# 🪙 ポイントシステム スラッシュコマンド
+# ==========================================
+JST = timezone(timedelta(hours=9))
+
+
+def parse_send_time(text: str):
+    """『@15:30』『15:30』『@2026/11/28-15:30』をJSTのdatetimeに変換（失敗時None）。
+    時刻のみの場合は、過ぎていれば翌日の同時刻として扱う。"""
+    text = text.strip().lstrip("@").strip()
+    now = datetime.now(JST)
+    try:
+        if "-" in text:
+            return datetime.strptime(text, "%Y/%m/%d-%H:%M").replace(tzinfo=JST)
+        t = datetime.strptime(text, "%H:%M")
+        target = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        return target
+    except ValueError:
+        return None
+
+
+# ==========================================
+# 📢 メッセージ送信コマンド (!message / !t-message)
+# ==========================================
+class Messenger(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self._tasks = set()
+
+    @commands.command(name="message")
+    async def message_cmd(self, ctx: commands.Context, channel: discord.TextChannel = None, *, message: str = None):
+        """!message #チャンネル メッセージ"""
+        if not is_staff(ctx.author):
+            await ctx.send("❌ このコマンドを実行する権限がありません。")
+            return
+        if channel is None or not message:
+            await ctx.send("⚠️ 使い方: `!message #チャンネル メッセージ`")
+            return
+        try:
+            await channel.send(message)
+            await ctx.send(f"✅ {channel.mention} にメッセージを送信しました。")
+        except Exception as e:
+            await ctx.send(f"❌ メッセージの送信に失敗しました: {e}")
+
+    @commands.command(name="t-message")
+    async def t_message_cmd(self, ctx: commands.Context, time_str: str = None, channel: discord.TextChannel = None, *, message: str = None):
+        """!t-message @時刻 #チャンネル メッセージ（時刻は JST。例: @15:30 / @2026/11/28-15:30）"""
+        if not is_staff(ctx.author):
+            await ctx.send("❌ このコマンドを実行する権限がありません。")
+            return
+        usage = "⚠️ 使い方: `!t-message @15:30 #チャンネル メッセージ`\n日付指定: `@2026/11/28-15:30`（日本時間）"
+        if time_str is None or channel is None or not message:
+            await ctx.send(usage)
+            return
+
+        target = parse_send_time(time_str)
+        if target is None:
+            await ctx.send("❌ 時刻の形式が正しくありません。\n" + usage)
+            return
+        delay = (target - datetime.now(JST)).total_seconds()
+        if delay <= 0:
+            await ctx.send("❌ 過去の時刻は指定できません。")
+            return
+
+        await ctx.send(f"⏰ {target.strftime('%Y/%m/%d %H:%M')} (JST) に {channel.mention} へ送信します。")
+        task = asyncio.create_task(self._send_later(ctx, channel, message, delay, target))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _send_later(self, ctx, channel, message, delay, target):
+        await asyncio.sleep(delay)
+        try:
+            await channel.send(message)
+            await ctx.send(f"✅ {ctx.author.mention} 予約メッセージを {channel.mention} に送信しました。")
+        except Exception as e:
+            await ctx.send(f"❌ {ctx.author.mention} 予約メッセージの送信に失敗しました: {e}")
 
 
 # ==========================================
